@@ -1,0 +1,150 @@
+resource "azurerm_automation_account" "cost_management" {
+  name                = "aa-${var.project_name}-${var.environment}-${var.location_abbreviation}"
+  location            = azurerm_resource_group.cost_management.location
+  resource_group_name = azurerm_resource_group.cost_management.name
+  sku_name            = "Basic" # Basic SKU for cost savings
+
+  identity {
+    type = "SystemAssigned"
+  }
+
+  tags = local.common_tags
+}
+
+# PowerShell 7.2 Runtime Environment with latest modules
+resource "azapi_resource" "powershell_runtime_env" {
+  type      = "Microsoft.Automation/automationAccounts/runtimeEnvironments@2023-05-15-preview"
+  name      = "PowerShell72-Runtime"
+  parent_id = azurerm_automation_account.cost_management.id
+  location  = azurerm_resource_group.cost_management.location
+
+  body = jsonencode({
+    properties = {
+      runtime = {
+        language = "PowerShell"
+        version  = "7.2"
+      }
+      description = "PowerShell 7.2 runtime environment with supported Az modules"
+      defaultPackages = {
+        "Az" = "11.2.0"
+        "Azure CLI" = "2.56.0"
+      }
+    }
+  })
+
+  depends_on = [azurerm_automation_account.cost_management]
+}
+
+# Use built-in role for MVP instead of custom role to simplify
+resource "azurerm_role_assignment" "automation_cost_reader" {
+  for_each = toset(var.target_subscription_ids)
+
+  scope                = "/subscriptions/${each.value}"
+  role_definition_name = "Cost Management Reader" # Built-in role
+  principal_id         = azurerm_automation_account.cost_management.identity[0].principal_id
+}
+
+# Additional roles for comprehensive access
+resource "azurerm_role_assignment" "automation_reader" {
+  for_each = toset(var.target_subscription_ids)
+
+  scope                = "/subscriptions/${each.value}"
+  role_definition_name = "Reader"
+  principal_id         = azurerm_automation_account.cost_management.identity[0].principal_id
+}
+
+# For billing invoice access
+resource "azurerm_role_assignment" "automation_billing_reader" {
+  scope                = "/subscriptions/${var.management_subscription_id}"
+  role_definition_name = "Billing Reader"
+  principal_id         = azurerm_automation_account.cost_management.identity[0].principal_id
+}
+
+# Grant Log Analytics Contributor role to write cost data
+resource "azurerm_role_assignment" "automation_log_analytics_contributor" {
+  scope                = azurerm_log_analytics_workspace.cost_management.id
+  role_definition_name = "Log Analytics Contributor"
+  principal_id         = azurerm_automation_account.cost_management.identity[0].principal_id
+}
+
+# Automation variables for secure storage
+resource "azurerm_automation_variable_string" "log_analytics_workspace_id" {
+  name                    = "LOG_ANALYTICS_WORKSPACE_ID"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  value                   = azurerm_log_analytics_workspace.cost_management.workspace_id
+  encrypted               = false
+}
+
+resource "azurerm_automation_variable_string" "log_analytics_workspace_key" {
+  name                    = "LOG_ANALYTICS_WORKSPACE_KEY"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  value                   = azurerm_log_analytics_workspace.cost_management.primary_shared_key
+  encrypted               = true
+}
+
+# Email configuration variables
+resource "azurerm_automation_variable_string" "email_from_address" {
+  name                    = "EmailFromAddress"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  value                   = var.email_from_address
+  encrypted               = false
+}
+
+resource "azurerm_automation_variable_string" "email_client_id" {
+  name                    = "EmailClientId"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  value                   = var.email_client_id
+  encrypted               = false
+}
+
+resource "azurerm_automation_variable_string" "email_tenant_id" {
+  name                    = "EmailTenantId"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  value                   = var.email_tenant_id
+  encrypted               = false
+}
+
+resource "azurerm_automation_variable_string" "email_client_secret" {
+  name                    = "EmailClientSecret"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  value                   = var.email_client_secret
+  encrypted               = true
+}
+
+# Cost report recipients
+resource "azurerm_automation_variable_string" "cost_report_recipients" {
+  name                    = "COST_REPORT_RECIPIENTS"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  value                   = var.cost_report_recipients
+  encrypted               = false
+}
+
+# Anthropic API key for AI analysis
+resource "azurerm_automation_variable_string" "anthropic_api_key" {
+  name                    = "ANTHROPIC_API_KEY"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  value                   = var.anthropic_api_key
+  encrypted               = true
+}
+
+# Target subscription IDs for cost collection
+resource "azurerm_automation_variable_string" "target_subscription_ids" {
+  name                    = "TARGET_SUBSCRIPTION_IDS"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  value                   = join(",", var.target_subscription_ids)
+  encrypted               = false
+}
+
+# Note: Azure PowerShell modules are now managed via PowerShell 7.2 Runtime Environment
+# with Az PowerShell 11.2.0 and Azure CLI 2.56.0 included by default.
+# Additional modules can be installed using the Install-AutomationModules.ps1 script
+# which targets the PowerShell 7.2 runtime environment for optimal performance and security.
