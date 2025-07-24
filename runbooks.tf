@@ -80,7 +80,7 @@ resource "azurerm_automation_schedule" "weekly_analysis" {
   week_days               = ["Sunday"]
 }
 
-# Baseline Calculation Schedule (Daily at 1 AM, after cost collection)
+# Baseline Calculation Schedule (Daily at 4 AM, after cost collection at 3 AM)
 resource "azurerm_automation_schedule" "baseline_calculation" {
   name                    = "sch-baseline-calculation"
   resource_group_name     = azurerm_resource_group.cost_management.name
@@ -88,8 +88,8 @@ resource "azurerm_automation_schedule" "baseline_calculation" {
   frequency               = "Day"
   interval                = 1
   timezone                = "America/New_York"
-  start_time              = timeadd(timestamp(), "6h")
-  description             = "Daily baseline calculation for cost trends and anomaly detection"
+  start_time              = "2025-07-25T04:00:00-04:00"
+  description             = "Daily baseline calculation for cost trends and anomaly detection (runs 1 hour after cost collection)"
   expiry_time             = "9999-12-31T18:59:00-05:00"
 }
 

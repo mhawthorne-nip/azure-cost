@@ -1,6 +1,0 @@
-target:
-  - url: "docs/"
-
-include:  []
-
-reinit: "fg6s3"
