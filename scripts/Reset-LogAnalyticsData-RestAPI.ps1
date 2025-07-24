@@ -26,7 +26,6 @@ param(
 
 # Import required modules
 Import-Module Az.Accounts -Force
-Import-Module Az.Profile -Force
 
 # Custom tables specific to the cost management project
 $CustomTables = @(
@@ -143,7 +142,7 @@ function Invoke-TablePurgeAPI {
         [string]$WorkspaceName,
         [string]$TableName,
         [int]$PurgeDays,
-        [switch]$WhatIf
+        [switch]$TestMode
     )
     
     try {
@@ -222,7 +221,7 @@ function Start-WorkspaceReset {
         [string]$WorkspaceName,
         [array]$TablesToReset,
         [int]$PurgeDays,
-        [switch]$WhatIf
+        [switch]$TestMode
     )
     
     $purgeOperations = @()
@@ -230,7 +229,7 @@ function Start-WorkspaceReset {
     Write-LogMessage "Starting workspace reset for $($TablesToReset.Count) tables..." "INFO"
     
     foreach ($table in $TablesToReset) {
-        $result = Invoke-TablePurgeAPI -SubscriptionId $SubscriptionId -ResourceGroupName $ResourceGroupName -WorkspaceName $WorkspaceName -TableName $table -PurgeDays $PurgeDays -WhatIf:$WhatIf
+        $result = Invoke-TablePurgeAPI -SubscriptionId $SubscriptionId -ResourceGroupName $ResourceGroupName -WorkspaceName $WorkspaceName -TableName $table -PurgeDays $PurgeDays -TestMode:$TestMode
         $purgeOperations += $result
         
         Start-Sleep -Seconds 1  # Rate limiting
@@ -249,8 +248,8 @@ function Watch-PurgeOperations {
         [int]$TimeoutMinutes = 30
     )
     
-    if ($PurgeOperations | Where-Object { $_.Status -eq "WhatIf" }) {
-        Write-LogMessage "WhatIf mode - no operations to monitor" "INFO"
+    if ($PurgeOperations | Where-Object { $_.Status -eq "TestMode" }) {
+        Write-LogMessage "TestMode - no operations to monitor" "INFO"
         return
     }
     
@@ -311,7 +310,7 @@ function Main {
     Write-LogMessage "Workspace: $WorkspaceName" "INFO"
     Write-LogMessage "Purge Days: $PurgeDays" "INFO"
     Write-LogMessage "Force: $Force" "INFO"
-    Write-LogMessage "WhatIf: $WhatIf" "INFO"
+    Write-LogMessage "TestMode: $TestMode" "INFO"
     
     # Check Azure connection
     $context = Get-AzContext
@@ -341,7 +340,7 @@ function Main {
     Write-LogMessage "Tables to reset: $($CustomTables -join ', ')" "INFO"
     
     # Confirmation prompt
-    if (-not $Force -and -not $WhatIf) {
+    if (-not $Force -and -not $TestMode) {
         Write-LogMessage "WARNING: This will permanently delete data from $($CustomTables.Count) tables!" "WARN"
         Write-LogMessage "Data from the last $PurgeDays days will be purged." "WARN"
         $confirmation = Read-Host "Type 'RESET' to confirm"
@@ -352,7 +351,7 @@ function Main {
     }
     
     # Execute reset
-    $purgeResults = Start-WorkspaceReset -SubscriptionId $SubscriptionId -ResourceGroupName $ResourceGroupName -WorkspaceName $WorkspaceName -TablesToReset $CustomTables -PurgeDays $PurgeDays -WhatIf:$WhatIf
+    $purgeResults = Start-WorkspaceReset -SubscriptionId $SubscriptionId -ResourceGroupName $ResourceGroupName -WorkspaceName $WorkspaceName -TablesToReset $CustomTables -PurgeDays $PurgeDays -TestMode:$TestMode
     
     # Show immediate results
     Write-LogMessage "=== PURGE INITIATION RESULTS ===" "INFO"
@@ -361,7 +360,7 @@ function Main {
         $table = $result.Table
         if ($status -eq "Initiated") {
             Write-LogMessage "$table : $status (ID: $($result.PurgeId))" "SUCCESS"
-        } elseif ($status -eq "WhatIf") {
+        } elseif ($status -eq "TestMode") {
             Write-LogMessage "$table : $status" "WARN"
         } else {
             Write-LogMessage "$table : $status" "ERROR"
@@ -371,8 +370,8 @@ function Main {
         }
     }
     
-    # Monitor operations if not WhatIf
-    if (-not $WhatIf) {
+    # Monitor operations if not TestMode
+    if (-not $TestMode) {
         Write-LogMessage "Starting operation monitoring..." "INFO"
         Watch-PurgeOperations -SubscriptionId $SubscriptionId -ResourceGroupName $ResourceGroupName -WorkspaceName $WorkspaceName -PurgeOperations $purgeResults -TimeoutMinutes 30
     }
@@ -381,16 +380,16 @@ function Main {
     Write-LogMessage "=== FINAL SUMMARY ===" "INFO"
     $initiated = ($purgeResults | Where-Object { $_.Status -eq "Initiated" }).Count
     $failed = ($purgeResults | Where-Object { $_.Status -eq "Failed" }).Count
-    $whatif = ($purgeResults | Where-Object { $_.Status -eq "WhatIf" }).Count
+    $testmode = ($purgeResults | Where-Object { $_.Status -eq "TestMode" }).Count
     
     Write-LogMessage "Total tables: $($CustomTables.Count)" "INFO"
     Write-LogMessage "Purge initiated: $initiated" "SUCCESS"
     Write-LogMessage "Failed: $failed" "ERROR"
-    if ($whatif -gt 0) {
-        Write-LogMessage "WhatIf operations: $whatif" "INFO"
+    if ($testmode -gt 0) {
+        Write-LogMessage "TestMode operations: $testmode" "INFO"
     }
     
-    if (-not $WhatIf -and $initiated -gt 0) {
+    if (-not $TestMode -and $initiated -gt 0) {
         Write-LogMessage "Purge operations may take several hours to complete fully." "INFO"
         Write-LogMessage "Monitor progress in Azure portal under Log Analytics workspace > Logs > Data purge." "INFO"
     }
