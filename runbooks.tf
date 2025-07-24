@@ -33,6 +33,22 @@ resource "azurerm_automation_runbook" "weekly_analysis" {
   tags = local.common_tags
 }
 
+# Baseline Calculation Runbook
+resource "azurerm_automation_runbook" "baseline_calculation" {
+  name                    = "rb-baseline-calculation"
+  location                = azurerm_resource_group.cost_management.location
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  log_verbose             = false
+  log_progress            = false
+  description             = "Cost baseline calculation for trend analysis and anomaly detection"
+  runbook_type            = "PowerShell72"
+
+  content = file("${path.module}/scripts/BaselineCalculation-Automation.ps1")
+
+  tags = local.common_tags
+}
+
 # Invoice Collection Runbook - REMOVED
 # Invoice data collection was removed due to API rate limiting issues
 # and lack of useful data for pay-as-you-go subscriptions
@@ -64,6 +80,19 @@ resource "azurerm_automation_schedule" "weekly_analysis" {
   week_days               = ["Sunday"]
 }
 
+# Baseline Calculation Schedule (Daily at 1 AM, after cost collection)
+resource "azurerm_automation_schedule" "baseline_calculation" {
+  name                    = "sch-baseline-calculation"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  frequency               = "Day"
+  interval                = 1
+  timezone                = "America/New_York"
+  start_time              = timeadd(timestamp(), "6h")
+  description             = "Daily baseline calculation for cost trends and anomaly detection"
+  expiry_time             = "9999-12-31T18:59:00-05:00"
+}
+
 # Monthly Invoice Collection Schedule - REMOVED
 # Invoice collection schedule was removed along with the runbook
 
@@ -80,6 +109,13 @@ resource "azurerm_automation_job_schedule" "weekly_analysis" {
   automation_account_name = azurerm_automation_account.cost_management.name
   schedule_name           = azurerm_automation_schedule.weekly_analysis.name
   runbook_name            = azurerm_automation_runbook.weekly_analysis.name
+}
+
+resource "azurerm_automation_job_schedule" "baseline_calculation" {
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  schedule_name           = azurerm_automation_schedule.baseline_calculation.name
+  runbook_name            = azurerm_automation_runbook.baseline_calculation.name
 }
 
 # Monthly invoice collection job schedule - REMOVED

@@ -1273,7 +1273,7 @@ AzureAdvisorRecommendations_CL
 function Get-BaselineDataFromLogAnalytics {
     <#
     .SYNOPSIS
-    Retrieves baseline cost data from the AzureCostBaseline_CL table for trend analysis
+    Retrieves comprehensive baseline data from the AzureCostBaseline_CL table for trend analysis and anomaly detection
     #>
     param(
         [Parameter(Mandatory=$true)]
@@ -1282,26 +1282,50 @@ function Get-BaselineDataFromLogAnalytics {
     )
 
     try {
-        Write-Output "Querying AzureCostBaseline_CL table for baseline data..."
+        Write-Output "Querying AzureCostBaseline_CL table for comprehensive baseline data..."
         
         $query = @"
 AzureCostBaseline_CL
 | where TimeGenerated > ago($($DaysBack)d)
-| where isnotempty(BaselineCost_d)
-| project TimeGenerated, Period = Period_s, BaselineCost = todouble(BaselineCost_d),
-          StandardDeviation = todouble(StandardDeviation_d), Trend = Trend_s,
-          ConfidenceInterval = todouble(ConfidenceInterval_d), ServiceName = ServiceName_s,
-          SubscriptionId = SubscriptionId_s
+| where isnotempty(BaselineType_s)
+| project TimeGenerated, CalculationDate_s, SubscriptionId_s, BaselineType_s, Period_s,
+          // Rolling averages
+          Avg7Day_d, Avg30Day_d, Avg60Day_d,
+          AvgAVD7Day_d, AvgAVD30Day_d, AvgNonAVD7Day_d, AvgNonAVD30Day_d,
+          // Variance metrics
+          StandardDeviation_d, CoefficientOfVariation_d, GrowthTrendPercent_d, TrendDirection_s,
+          UpperConfidenceInterval_d, LowerConfidenceInterval_d,
+          // Seasonal patterns
+          PeakDay_d, PeakDayName_s, PeakDayCost_d, LowDay_d, LowDayName_s, LowDayCost_d,
+          SeasonalVariance_d, SeasonalityIndex_d, PatternStrength_s,
+          // Service-specific data
+          ServiceName_s, IsAVDResource_b, AvgDailyCost_d, VolatilityRatio_d, Predictability_s,
+          ExpectedMinCost_d, ExpectedMaxCost_d, GrowthPattern_s,
+          // Anomaly thresholds
+          DayChangeAvg_d, DayChangeStdDev_d, DayUpperThreshold_d, DayLowerThreshold_d,
+          WeekChangeAvg_d, WeekChangeStdDev_d, WeekUpperThreshold_d, WeekLowerThreshold_d,
+          RecentAnomalyCount_d, RecentAnomalyRate_d,
+          // Data quality
+          DataPoints_d, DataQuality_s
 | order by TimeGenerated desc
 "@
 
-        $result = Invoke-LogAnalyticsQuery -WorkspaceId $WorkspaceId -Query $query -QueryName "Baseline Data"
+        $result = Invoke-LogAnalyticsQuery -WorkspaceId $WorkspaceId -Query $query -QueryName "Comprehensive Baseline Data"
         
         if ($result -and $result.Count -gt 0) {
             Write-Output "Retrieved $($result.Count) baseline records from Log Analytics"
+            
+            # Group by baseline type for analysis
+            $baselineTypes = $result | Group-Object -Property BaselineType_s
+            Write-Output "Baseline types available:"
+            foreach ($type in $baselineTypes) {
+                Write-Output "  - $($type.Name): $($type.Count) records"
+            }
+            
             return $result
         } else {
             Write-Warning "No baseline data found in AzureCostBaseline_CL table"
+            Write-Warning "You may need to run the baseline calculation runbook first"
             return @()
         }
     } catch {
