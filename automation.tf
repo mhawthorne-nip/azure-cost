@@ -144,6 +144,72 @@ resource "azurerm_automation_variable_string" "target_subscription_ids" {
   encrypted               = false
 }
 
+# Enhanced feature flags for the Weekly Analysis Engine v2.0
+resource "azurerm_automation_variable_bool" "enable_advanced_prompting" {
+  name                    = "ENABLE_ADVANCED_PROMPTING"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  value                   = var.enable_advanced_prompting
+  description            = "Enable Chain-of-Thought AI analysis with Claude"
+}
+
+resource "azurerm_automation_variable_bool" "include_anomaly_detection" {
+  name                    = "INCLUDE_ANOMALY_DETECTION"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  value                   = var.include_anomaly_detection
+  description            = "Enable statistical anomaly detection in cost analysis"
+}
+
+resource "azurerm_automation_variable_bool" "include_chargeback_analysis" {
+  name                    = "INCLUDE_CHARGEBACK_ANALYSIS"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  value                   = var.include_chargeback_analysis
+  description            = "Enable comprehensive chargeback and tag compliance analysis"
+}
+
+resource "azurerm_automation_variable_bool" "include_forecasting" {
+  name                    = "INCLUDE_FORECASTING"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  value                   = var.include_forecasting
+  description            = "Include cost forecasting data in analysis"
+}
+
+resource "azurerm_automation_variable_bool" "include_optimization_recommendations" {
+  name                    = "INCLUDE_OPTIMIZATION_RECOMMENDATIONS"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  value                   = var.include_optimization_recommendations
+  description            = "Include detailed optimization recommendations from Azure Advisor"
+}
+
+# Collection script feature flags (already enhanced)
+resource "azurerm_automation_variable_bool" "include_reservations" {
+  name                    = "INCLUDE_RESERVATIONS"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  value                   = true
+  description            = "Include reserved instance utilization data collection"
+}
+
+resource "azurerm_automation_variable_bool" "include_budgets" {
+  name                    = "INCLUDE_BUDGETS"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  value                   = true
+  description            = "Include budget tracking and alerts"
+}
+
+resource "azurerm_automation_variable_bool" "include_advisor" {
+  name                    = "INCLUDE_ADVISOR"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  value                   = true
+  description            = "Include Azure Advisor recommendations collection"
+}
+
 # Note: Azure PowerShell modules are now managed via PowerShell 7.2 Runtime Environment
 # with Az PowerShell 11.2.0 and Azure CLI 2.56.0 included by default.
 # Additional modules can be installed using the Install-AutomationModules.ps1 script

@@ -14,6 +14,14 @@ cost_report_recipients = "costadmin@yourdomain.com,manager@yourdomain.com"
 # AI configuration - Replace with your Anthropic API key
 anthropic_api_key = "sk-ant-api03-your-anthropic-api-key-here"
 
+# Enhanced Azure Cost Management v2.0 Feature Flags (Optional - defaults to true)
+# Set to false to disable specific features if needed
+# enable_advanced_prompting = true
+# include_anomaly_detection = true
+# include_chargeback_analysis = true
+# include_forecasting = true
+# include_optimization_recommendations = true
+
 # Optional: Override default values
 # location = "eastus"
 # environment = "dev"

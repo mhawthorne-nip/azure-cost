@@ -99,3 +99,34 @@ variable "cost_report_recipients" {
   type        = string
   default     = "costadmin@yourdomain.com"
 }
+
+# Enhanced Azure Cost Management v2.0 Feature Flags
+variable "enable_advanced_prompting" {
+  description = "Enable Chain-of-Thought AI analysis with Claude"
+  type        = bool
+  default     = true
+}
+
+variable "include_anomaly_detection" {
+  description = "Enable statistical anomaly detection in cost analysis"
+  type        = bool
+  default     = true
+}
+
+variable "include_chargeback_analysis" {
+  description = "Enable comprehensive chargeback and tag compliance analysis"
+  type        = bool
+  default     = true
+}
+
+variable "include_forecasting" {
+  description = "Include cost forecasting data in analysis"
+  type        = bool
+  default     = true
+}
+
+variable "include_optimization_recommendations" {
+  description = "Include detailed optimization recommendations from Azure Advisor"
+  type        = bool
+  default     = true
+}
