@@ -2,6 +2,12 @@
 
 This comprehensive solution provides automated cost analysis across Azure subscriptions with AI-powered insights, weekly reporting, and AVD resource exclusions. Designed for MVP deployment in East US with the naming convention: `<azure-resource-abbreviation>-nip-costing-dev-eus`.
 
+## 📚 Complete Documentation
+
+- **[📖 Comprehensive Project Documentation](docs/PROJECT_DOCUMENTATION.md)** - Complete technical documentation with architecture, deployment, and operational procedures
+- **[🏗️ Architecture Diagrams](docs/ARCHITECTURE_DIAGRAMS.md)** - Visual system architecture and data flow diagrams  
+- **[⚡ Quick Reference Guide](docs/QUICK_REFERENCE.md)** - Essential commands and troubleshooting steps
+
 ## Key Features
 
 - Single subscription MVP with multi-subscription scalability
@@ -11,7 +17,9 @@ This comprehensive solution provides automated cost analysis across Azure subscr
 - Email reporting via Microsoft Graph REST API
 - AI-ready architecture (Claude 3.5 Haiku integration)
 
-## Quick Start
+## 🚀 Quick Start
+
+> **For detailed documentation, see [📖 PROJECT_DOCUMENTATION.md](docs/PROJECT_DOCUMENTATION.md)**
 
 ### Prerequisites
 
@@ -37,7 +45,7 @@ az account show --output table
 
 ```powershell
 # Copy the example variables file
-cp terraform.tfvars.example terraform.tfvars
+Copy-Item "terraform.tfvars.example" "terraform.tfvars"
 
 # Edit terraform.tfvars with your actual values:
 # - Email configuration (Azure AD app details)
@@ -64,97 +72,11 @@ terraform apply -auto-approve
 # Check resource group
 az group show --name "rg-nip-costing-dev-eus" --output table
 
-# Verify automation account
-az automation account show --resource-group "rg-nip-costing-dev-eus" --automation-account-name "aa-nip-costing-dev-eus"
-
 # Test the cost collection runbook
 az automation runbook start --resource-group "rg-nip-costing-dev-eus" --automation-account-name "aa-nip-costing-dev-eus" --runbook-name "rb-cost-collection"
 ```
 
-## Resource Naming Convention
-
-All resources follow the pattern: `<abbreviation>-nip-costing-dev-eus`
-
-- Resource Group: `rg-nip-costing-dev-eus`
-- Log Analytics: `law-nip-costing-dev-eus`
-- Automation Account: `aa-nip-costing-dev-eus`
-- Storage Account: `stnipcostingdev<random>` (due to Azure naming restrictions)
-- Key Vault: `kv-dev-cost-<random>`
-
-## Architecture Overview
-
-### Core Components
-
-1. **Log Analytics Workspace**: Stores cost data with custom table
-2. **Azure Automation**: Executes PowerShell runbooks on schedule
-3. **Storage Account**: Stores reports and temporary data
-4. **Key Vault**: Secures sensitive configuration
-5. **Data Collection Rules**: Configures monitoring and metrics
-
-### Data Flow
-
-1. **Daily Collection**: Automation runbook queries Cost Management API
-2. **Data Processing**: Filters AVD resources and formats data
-3. **Storage**: Sends processed data to Log Analytics
-4. **Weekly Analysis**: AI-powered analysis using Claude 3.5 Haiku
-5. **Reporting**: HTML email reports via Microsoft Graph
-
-## Configuration
-
-### Email Setup (Azure AD App Registration)
-
-1. Create Azure AD App Registration:
-   - Name: `app-nip-costing-email-dev`
-   - Permissions: `Mail.Send` (Application permission)
-   - Create client secret
-
-2. Update `terraform.tfvars`:
-   ```hcl
-   email_from_address = "costmgmt@yourdomain.com"
-   email_client_id = "your-app-client-id"
-   email_tenant_id = "your-tenant-id"
-   email_client_secret = "your-client-secret"
-   ```
-
-### AI Analysis Setup
-
-1. Get Anthropic API key from https://console.anthropic.com
-2. Update `terraform.tfvars`:
-   ```hcl
-   anthropic_api_key = "sk-ant-api03-your-key-here"
-   ```
-
-## Operational Guide
-
-### Manual Execution
-
-```powershell
-# Run cost collection manually
-az automation runbook start --resource-group "rg-nip-costing-dev-eus" --automation-account-name "aa-nip-costing-dev-eus" --runbook-name "rb-cost-collection"
-
-# Run weekly analysis manually
-az automation runbook start --resource-group "rg-nip-costing-dev-eus" --automation-account-name "aa-nip-costing-dev-eus" --runbook-name "rb-weekly-analysis"
-
-# Check job status
-az automation job list --resource-group "rg-nip-costing-dev-eus" --automation-account-name "aa-nip-costing-dev-eus" --output table
-```
-
-### Monitoring
-
-Query Log Analytics for cost data:
-```kql
-AzureCostData_CL
-| where TimeGenerated >= ago(7d)
-| summarize TotalCost = sum(Cost_d) by ServiceName_s
-| order by TotalCost desc
-```
-
-### Scheduled Execution
-
-- **Daily**: Cost collection at 2:00 AM EST
-- **Weekly**: Analysis and reporting on Sundays at 6:00 AM EST
-
-## Cost Estimates (East US)
+## 💰 Cost Estimates (East US)
 
 | Resource | Configuration | Monthly Cost |
 |----------|--------------|--------------|
@@ -167,103 +89,75 @@ AzureCostData_CL
 
 *Excludes external costs: Anthropic API calls (~$1-5/month)*
 
-## Scaling to Production
+## 🏗️ Architecture
 
-### Add Multiple Subscriptions
+The solution follows a hub-and-spoke model with centralized cost management:
 
-Update `terraform.tfvars`:
-```hcl
-target_subscription_ids = [
-  "e653ba88-fc91-42f4-b22b-c35e36b00835",
-  "subscription-id-2",
-  "subscription-id-3"
-]
+```
+Azure Subscriptions → Cost Management APIs → Automation Account → Log Analytics
+                                                    ↓
+Email Recipients ← Microsoft Graph ← AI Analysis ← Claude 3.5 Haiku
 ```
 
-### Service Principal Authentication
+**Resource Naming**: All resources follow `<abbreviation>-nip-costing-dev-eus` pattern
 
-For production, replace Azure CLI auth:
+## 📊 Monitoring & Operations
 
-1. Create service principal:
-   ```powershell
-   az ad sp create-for-rbac --name "sp-nip-costing-terraform-prod" --scopes "/subscriptions/e653ba88-fc91-42f4-b22b-c35e36b00835"
-   ```
-
-2. Update `providers.tf`:
-   ```hcl
-   provider "azurerm" {
-     features {}
-     client_id       = var.client_id
-     client_secret   = var.client_secret
-     tenant_id       = var.tenant_id
-     subscription_id = var.management_subscription_id
-   }
-   ```
-
-### Enhanced Security
-
-1. Enable Key Vault purge protection
-2. Increase Log Analytics retention
-3. Add network restrictions
-4. Enable backup for critical data
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Authentication Errors**:
-   ```powershell
-   # Re-login to Azure
-   az logout
-   az login
-   ```
-
-2. **Runbook Failures**:
-   - Check managed identity permissions
-   - Verify automation variables are set
-   - Review runbook logs in Azure portal
-
-3. **No Email Delivery**:
-   - Verify Azure AD app permissions
-   - Check client secret expiration
-   - Confirm from address is valid
-
-4. **Missing Cost Data**:
-   - Ensure Cost Management APIs are enabled
-   - Check date ranges in queries
-   - Verify subscription access
-
-### Debug Commands
-
+### Manual Execution
 ```powershell
-# Check role assignments
-az role assignment list --assignee $(az automation account show --resource-group "rg-nip-costing-dev-eus" --automation-account-name "aa-nip-costing-dev-eus" --query identity.principalId -o tsv) --output table
+# Run cost collection
+az automation runbook start --resource-group "rg-nip-costing-dev-eus" --automation-account-name "aa-nip-costing-dev-eus" --runbook-name "rb-cost-collection"
 
-# View automation variables
-az automation variable list --resource-group "rg-nip-costing-dev-eus" --automation-account-name "aa-nip-costing-dev-eus" --output table
-
-# Check Log Analytics data
-az monitor log-analytics query --workspace $(terraform output -raw log_analytics_workspace_id) --analytics-query "AzureCostData_CL | take 10"
+# Check recent cost data
+az monitor log-analytics query --workspace $(terraform output -raw log_analytics_workspace_id) --analytics-query "AzureCostData_CL | where TimeGenerated >= ago(7d) | summarize sum(Cost_d) by ServiceName_s"
 ```
 
-## Cleanup
+### Scheduled Operations
+- **Daily**: Cost collection at 02:00 EST
+- **Weekly**: AI analysis and email reports on Sundays at 06:00 EST
 
-To remove all resources:
+## 🔧 Configuration
+
+### Required Configuration (terraform.tfvars)
+```hcl
+# Email (Azure AD App Registration with Mail.Send permission)
+email_from_address = "costmgmt@yourdomain.com"
+email_client_id = "your-app-registration-client-id"
+email_tenant_id = "your-tenant-id"
+email_client_secret = "your-client-secret"
+cost_report_recipients = "admin@domain.com,manager@domain.com"
+
+# AI Analysis
+anthropic_api_key = "sk-ant-api03-your-anthropic-key"
+
+# Subscriptions
+target_subscription_ids = ["subscription-id-here"]
+```
+
+## 🚨 Troubleshooting
+
+**Common Issues:**
+- **No cost data**: Check managed identity permissions
+- **No emails**: Verify Azure AD app `Mail.Send` permission
+- **High costs**: Monitor Log Analytics usage (1GB daily limit)
+
+**Quick Fixes:**
+```powershell
+# Check permissions
+az role assignment list --assignee $(az automation account show --resource-group "rg-nip-costing-dev-eus" --automation-account-name "aa-nip-costing-dev-eus" --query identity.principalId -o tsv)
+
+# View job status
+az automation job list --resource-group "rg-nip-costing-dev-eus" --automation-account-name "aa-nip-costing-dev-eus" --output table
+```
+
+## 🧹 Cleanup
 
 ```powershell
 terraform destroy -auto-approve
 ```
 
-## Support
-
-For issues or questions:
-1. Check Azure Automation job logs
-2. Review Log Analytics for data issues
-3. Verify email and AI configuration
-4. Contact the DevOps team
-
 ---
 
-**Version**: MVP 1.0  
-**Last Updated**: $(Get-Date -Format 'yyyy-MM-dd')  
-**Estimated Monthly Cost**: $3.53 + API usage
+📧 **Support**: costmgmt@yourdomain.com  
+📅 **Last Updated**: July 24, 2025  
+💡 **Version**: MVP 1.0

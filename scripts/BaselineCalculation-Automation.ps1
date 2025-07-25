@@ -148,10 +148,39 @@ function Calculate-RollingAverages {
     
     Write-Output "Calculating rolling averages for the last $LookbackDays days"
     
+    # First check how many days of data we have
+    $dataCheckQuery = @"
+AzureCostData_CL
+| where TimeGenerated >= ago(${LookbackDays}d)
+| where isnotempty(Cost_d) and Cost_d > 0
+| extend CostDate = format_datetime(TimeGenerated, 'yyyy-MM-dd')
+| summarize UniqueDays = dcount(CostDate)
+"@
+
+    $dataCheck = Invoke-LogAnalyticsQuery -WorkspaceId $WorkspaceId -Query $dataCheckQuery -QueryName "Data Availability Check"
+    
+    if ($dataCheck -and $dataCheck.Count -gt 0) {
+        $availableDays = [int]$dataCheck[0].UniqueDays
+        Write-Output "Available data: $availableDays days"
+        
+        if ($availableDays -lt 3) {
+            Write-Warning "Insufficient data for baseline calculation. Need at least 3 days of data, found $availableDays days."
+            Write-Output "Baseline calculation skipped - will retry when more data is available"
+            return
+        }
+        
+        # Adjust lookback period based on available data
+        $effectiveLookback = [Math]::Min($LookbackDays, $availableDays)
+        Write-Output "Using effective lookback period: $effectiveLookback days"
+    } else {
+        Write-Warning "Could not determine data availability"
+        return
+    }
+
     # Query to get daily cost totals for rolling average calculation
     $rollingAverageQuery = @"
 AzureCostData_CL
-| where TimeGenerated >= ago(${LookbackDays}d)
+| where TimeGenerated >= ago(${effectiveLookback}d)
 | where isnotempty(Cost_d) and Cost_d > 0
 | extend CostDate = format_datetime(TimeGenerated, 'yyyy-MM-dd')
 | summarize 
@@ -179,44 +208,57 @@ AzureCostData_CL
         
         Write-Output "Calculating baselines for subscription: $subscriptionId"
         
-        # Calculate various rolling averages
+        # Calculate various rolling averages with safeguards for limited data
         $totalCosts = $subCostData | ForEach-Object { [double]$_.DailyCost }
         $avdCosts = $subCostData | ForEach-Object { [double]$_.AVDCost }
         $nonAvdCosts = $subCostData | ForEach-Object { [double]$_.NonAVDCost }
         
-        # 7-day rolling average
+        Write-Output "Processing $($totalCosts.Count) days of data for subscription $subscriptionId"
+        
+        # Skip if insufficient data for meaningful calculations
+        if ($totalCosts.Count -lt 2) {
+            Write-Warning "Skipping subscription $subscriptionId - insufficient data points ($($totalCosts.Count))"
+            continue
+        }
+        
+        # 7-day rolling average (or all available data if less than 7 days)
         $avg7Day = if ($totalCosts.Count -ge 7) { 
             ($totalCosts | Select-Object -Last 7 | Measure-Object -Average).Average 
         } else { 
             ($totalCosts | Measure-Object -Average).Average 
         }
         
-        # 30-day rolling average
+        # 30-day rolling average (or all available data if less than 30 days)
         $avg30Day = if ($totalCosts.Count -ge 30) { 
             ($totalCosts | Select-Object -Last 30 | Measure-Object -Average).Average 
         } else { 
             ($totalCosts | Measure-Object -Average).Average 
         }
         
-        # 60-day rolling average
+        # 60-day rolling average (or all available data if less than 60 days)
         $avg60Day = if ($totalCosts.Count -ge 60) { 
             ($totalCosts | Select-Object -Last 60 | Measure-Object -Average).Average 
         } else { 
             ($totalCosts | Measure-Object -Average).Average 
         }
         
-        # Calculate standard deviations for variance analysis
+        # Calculate standard deviations for variance analysis (only if we have multiple data points)
         $totalStdDev = if ($totalCosts.Count -gt 1) {
             $mean = ($totalCosts | Measure-Object -Average).Average
             $variance = ($totalCosts | ForEach-Object { [Math]::Pow($_ - $mean, 2) } | Measure-Object -Average).Average
             [Math]::Sqrt($variance)
         } else { 0 }
         
-        # Calculate growth trends
+        # Calculate growth trends (only if we have at least 2 weeks of data)
         $growthTrend = if ($totalCosts.Count -ge 14) {
             $recentWeek = ($totalCosts | Select-Object -Last 7 | Measure-Object -Average).Average
             $previousWeek = ($totalCosts | Select-Object -Skip ($totalCosts.Count - 14) | Select-Object -First 7 | Measure-Object -Average).Average
             if ($previousWeek -gt 0) { (($recentWeek - $previousWeek) / $previousWeek) * 100 } else { 0 }
+        } elseif ($totalCosts.Count -ge 2) {
+            # Simple day-over-day trend for limited data
+            $latest = $totalCosts[-1]
+            $previous = $totalCosts[-2]
+            if ($previous -gt 0) { (($latest - $previous) / $previous) * 100 } else { 0 }
         } else { 0 }
         
         # Create baseline entry
@@ -232,11 +274,11 @@ AzureCostData_CL
             Avg30Day = [Math]::Round($avg30Day, 2)
             Avg60Day = [Math]::Round($avg60Day, 2)
             
-            # AVD-specific baselines
-            AvgAVD7Day = [Math]::Round(($avdCosts | Select-Object -Last 7 | Measure-Object -Average).Average, 2)
-            AvgAVD30Day = [Math]::Round(($avdCosts | Select-Object -Last 30 | Measure-Object -Average).Average, 2)
-            AvgNonAVD7Day = [Math]::Round(($nonAvdCosts | Select-Object -Last 7 | Measure-Object -Average).Average, 2)
-            AvgNonAVD30Day = [Math]::Round(($nonAvdCosts | Select-Object -Last 30 | Measure-Object -Average).Average, 2)
+            # AVD-specific baselines (with safety checks)
+            AvgAVD7Day = if ($avdCosts.Count -gt 0) { [Math]::Round(($avdCosts | Select-Object -Last 7 | Measure-Object -Average).Average, 2) } else { 0 }
+            AvgAVD30Day = if ($avdCosts.Count -gt 0) { [Math]::Round(($avdCosts | Select-Object -Last 30 | Measure-Object -Average).Average, 2) } else { 0 }
+            AvgNonAVD7Day = if ($nonAvdCosts.Count -gt 0) { [Math]::Round(($nonAvdCosts | Select-Object -Last 7 | Measure-Object -Average).Average, 2) } else { 0 }
+            AvgNonAVD30Day = if ($nonAvdCosts.Count -gt 0) { [Math]::Round(($nonAvdCosts | Select-Object -Last 30 | Measure-Object -Average).Average, 2) } else { 0 }
             
             # Variance metrics
             StandardDeviation = [Math]::Round($totalStdDev, 2)
@@ -274,6 +316,31 @@ function Calculate-SeasonalBaselines {
     }
     
     Write-Output "Calculating seasonal baselines and patterns"
+    
+    # First check if we have enough data for seasonal analysis
+    $seasonalDataCheckQuery = @"
+AzureCostData_CL
+| where TimeGenerated >= ago(90d)
+| where isnotempty(Cost_d) and Cost_d > 0
+| extend CostDate = format_datetime(TimeGenerated, 'yyyy-MM-dd')
+| summarize UniqueDays = dcount(CostDate)
+"@
+
+    $seasonalDataCheck = Invoke-LogAnalyticsQuery -WorkspaceId $WorkspaceId -Query $seasonalDataCheckQuery -QueryName "Seasonal Data Availability Check"
+    
+    if ($seasonalDataCheck -and $seasonalDataCheck.Count -gt 0) {
+        $availableDays = [int]$seasonalDataCheck[0].UniqueDays
+        Write-Output "Available data for seasonal analysis: $availableDays days"
+        
+        if ($availableDays -lt 7) {
+            Write-Warning "Insufficient data for seasonal analysis. Need at least 7 days of data, found $availableDays days."
+            Write-Output "Seasonal analysis skipped - will retry when more data is available"
+            return
+        }
+    } else {
+        Write-Warning "Could not determine seasonal data availability - skipping seasonal analysis"
+        return
+    }
     
     # Query for seasonal pattern analysis (day of week, week of month)
     $seasonalQuery = @"
@@ -392,6 +459,32 @@ function Calculate-ServiceBaselines {
     
     Write-Output "Calculating service-specific baselines"
     
+    # First check if we have enough data for service analysis
+    $serviceDataCheckQuery = @"
+AzureCostData_CL
+| where TimeGenerated >= ago(60d)
+| where isnotempty(Cost_d) and Cost_d > 0
+| where isnotempty(ServiceName_s)
+| extend CostDate = format_datetime(TimeGenerated, 'yyyy-MM-dd')
+| summarize UniqueDays = dcount(CostDate)
+"@
+
+    $serviceDataCheck = Invoke-LogAnalyticsQuery -WorkspaceId $WorkspaceId -Query $serviceDataCheckQuery -QueryName "Service Data Availability Check"
+    
+    if ($serviceDataCheck -and $serviceDataCheck.Count -gt 0) {
+        $availableDays = [int]$serviceDataCheck[0].UniqueDays
+        Write-Output "Available data for service analysis: $availableDays days"
+        
+        if ($availableDays -lt 7) {
+            Write-Warning "Insufficient data for service analysis. Need at least 7 days of data, found $availableDays days."
+            Write-Output "Service analysis skipped - will retry when more data is available"
+            return
+        }
+    } else {
+        Write-Warning "Could not determine service data availability - skipping service analysis"
+        return
+    }
+    
     # Query for service-level baseline calculation
     $serviceQuery = @"
 AzureCostData_CL
@@ -498,6 +591,31 @@ function Calculate-AnomalyBaselines {
     )
     
     Write-Output "Calculating anomaly detection baselines"
+    
+    # First check if we have enough data for anomaly analysis
+    $anomalyDataCheckQuery = @"
+AzureCostData_CL
+| where TimeGenerated >= ago(30d)
+| where isnotempty(Cost_d) and Cost_d > 0
+| extend CostDate = format_datetime(TimeGenerated, 'yyyy-MM-dd')
+| summarize UniqueDays = dcount(CostDate)
+"@
+
+    $anomalyDataCheck = Invoke-LogAnalyticsQuery -WorkspaceId $WorkspaceId -Query $anomalyDataCheckQuery -QueryName "Anomaly Data Availability Check"
+    
+    if ($anomalyDataCheck -and $anomalyDataCheck.Count -gt 0) {
+        $availableDays = [int]$anomalyDataCheck[0].UniqueDays
+        Write-Output "Available data for anomaly analysis: $availableDays days"
+        
+        if ($availableDays -lt 7) {
+            Write-Warning "Insufficient data for anomaly analysis. Need at least 7 days of data, found $availableDays days."
+            Write-Output "Anomaly analysis skipped - will retry when more data is available"
+            return
+        }
+    } else {
+        Write-Warning "Could not determine anomaly data availability - skipping anomaly analysis"
+        return
+    }
     
     # Query for anomaly baseline calculation
     $anomalyQuery = @"
@@ -639,21 +757,68 @@ try {
     # Execute baseline calculations
     Write-Output "Starting baseline calculations..."
     
+    # First do a quick check if we have any cost data at all
+    $globalDataCheckQuery = @"
+AzureCostData_CL
+| where TimeGenerated >= ago(90d)
+| where isnotempty(Cost_d) and Cost_d > 0
+| summarize RecordCount = count(), UniqueDays = dcount(format_datetime(TimeGenerated, 'yyyy-MM-dd'))
+"@
+
+    try {
+        $globalDataCheck = Invoke-LogAnalyticsQuery -WorkspaceId $workspaceId -Query $globalDataCheckQuery -QueryName "Global Data Availability Check"
+        
+        if ($globalDataCheck -and $globalDataCheck.Count -gt 0 -and [int]$globalDataCheck[0].RecordCount -gt 0) {
+            $totalRecords = [int]$globalDataCheck[0].RecordCount
+            $totalDays = [int]$globalDataCheck[0].UniqueDays
+            Write-Output "Global data check: $totalRecords records across $totalDays days"
+            
+            if ($totalDays -eq 0) {
+                Write-Warning "No cost data found in the last 90 days. Skipping all baseline calculations."
+                Write-Output "Please ensure the cost collection runbook is running and collecting data."
+                return
+            }
+        } else {
+            Write-Warning "No cost data found. Skipping all baseline calculations."
+            Write-Output "Please ensure the cost collection runbook is running and collecting data."
+            return
+        }
+    } catch {
+        Write-Warning "Could not check data availability: $($_.Exception.Message)"
+        Write-Output "Proceeding with individual function checks..."
+    }
+    
     # 1. Calculate rolling averages (always enabled)
-    Calculate-RollingAverages -WorkspaceId $workspaceId -CalculationDate $CalculationDate -LookbackDays $LookbackDays
+    try {
+        Calculate-RollingAverages -WorkspaceId $workspaceId -CalculationDate $CalculationDate -LookbackDays $LookbackDays
+    } catch {
+        Write-Warning "Rolling averages calculation failed: $($_.Exception.Message)"
+    }
     
     # 2. Calculate seasonal baselines
     if ($IncludeSeasonalAnalysis) {
-        Calculate-SeasonalBaselines -WorkspaceId $workspaceId -CalculationDate $CalculationDate
+        try {
+            Calculate-SeasonalBaselines -WorkspaceId $workspaceId -CalculationDate $CalculationDate
+        } catch {
+            Write-Warning "Seasonal analysis failed: $($_.Exception.Message)"
+        }
     }
     
     # 3. Calculate service-specific baselines
     if ($IncludeServiceBaselines) {
-        Calculate-ServiceBaselines -WorkspaceId $workspaceId -CalculationDate $CalculationDate
+        try {
+            Calculate-ServiceBaselines -WorkspaceId $workspaceId -CalculationDate $CalculationDate
+        } catch {
+            Write-Warning "Service baselines calculation failed: $($_.Exception.Message)"
+        }
     }
     
     # 4. Calculate anomaly detection baselines
-    Calculate-AnomalyBaselines -WorkspaceId $workspaceId -CalculationDate $CalculationDate
+    try {
+        Calculate-AnomalyBaselines -WorkspaceId $workspaceId -CalculationDate $CalculationDate
+    } catch {
+        Write-Warning "Anomaly baselines calculation failed: $($_.Exception.Message)"
+    }
     
     $endTime = Get-Date
     $duration = $endTime - $startTime

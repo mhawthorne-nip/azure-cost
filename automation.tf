@@ -35,30 +35,11 @@ resource "azapi_resource" "powershell_runtime_env" {
   depends_on = [azurerm_automation_account.cost_management]
 }
 
-# Use built-in role for MVP instead of custom role to simplify
-resource "azurerm_role_assignment" "automation_cost_reader" {
-  for_each = toset(var.target_subscription_ids)
-
-  scope                = "/subscriptions/${each.value}"
-  role_definition_name = "Cost Management Reader" # Built-in role
-  principal_id         = azurerm_automation_account.cost_management.identity[0].principal_id
-}
-
-# Additional roles for comprehensive access
-resource "azurerm_role_assignment" "automation_reader" {
-  for_each = toset(var.target_subscription_ids)
-
-  scope                = "/subscriptions/${each.value}"
-  role_definition_name = "Reader"
-  principal_id         = azurerm_automation_account.cost_management.identity[0].principal_id
-}
-
-# For billing invoice access
-resource "azurerm_role_assignment" "automation_billing_reader" {
-  scope                = "/subscriptions/${var.management_subscription_id}"
-  role_definition_name = "Billing Reader"
-  principal_id         = azurerm_automation_account.cost_management.identity[0].principal_id
-}
+# Role assignments removed - manually managed (Billing Reader, Cost Management Reader)
+# The following roles need to be assigned manually to the automation account managed identity:
+# - Cost Management Reader (on target subscriptions)
+# - Billing Reader (on management subscription)  
+# - Reader (on target subscriptions, if needed for resource metadata)
 
 # Grant Log Analytics Contributor role to write cost data
 resource "azurerm_role_assignment" "automation_log_analytics_contributor" {
