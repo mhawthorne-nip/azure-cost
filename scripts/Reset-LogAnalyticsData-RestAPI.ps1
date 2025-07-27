@@ -1,7 +1,7 @@
 # Reset-LogAnalyticsData-RestAPI.ps1
 # Advanced script using Azure REST API for complete Log Analytics workspace data purge
 # Purges all custom tables for Azure Cost Management automation project
-# Now includes: Cost Data, Baseline, Historical, Invoice, Advisor, Forecast, and Reservation tables
+# Includes: Cost Data, Baseline, Historical, Advisor, Forecast, Budget Tracking, and Reservation tables
 
 [CmdletBinding()]
 param(
@@ -35,7 +35,6 @@ $CustomTables = @(
     "AzureCostData_CL",
     "AzureCostForecast_CL",
     "AzureHistoricalCostData_CL",
-    "AzureInvoiceData_CL",  # DEPRECATED - contains 11 legacy records
     "AzureReservationUtilization_CL"
 )
 
