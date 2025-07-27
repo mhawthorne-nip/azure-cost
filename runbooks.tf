@@ -1,18 +1,34 @@
 # Azure Automation Runbooks and Schedules
 # This file defines the runbooks and schedules for the cost management automation
 
-# Cost Data Collection Runbook
+# Cost Data Collection Runbook (Full) - For comprehensive weekly collection
 resource "azurerm_automation_runbook" "cost_collection" {
-  name                    = "rb-cost-collection"
+  name                    = "rb-cost-collection-full"
   location                = azurerm_resource_group.cost_management.location
   resource_group_name     = azurerm_resource_group.cost_management.name
   automation_account_name = azurerm_automation_account.cost_management.name
   log_verbose             = false
   log_progress            = false
-  description             = "Daily cost data collection from Azure Cost Management API"
+  description             = "Comprehensive cost data collection from Azure Cost Management API (weekly)"
   runbook_type            = "PowerShell72"
 
-  content = file("${path.module}/scripts/CostDataCollection-Automation.ps1")
+  content = file("${path.module}/scripts/CostDataCollection-Weekly.ps1")
+
+  tags = local.common_tags
+}
+
+# Express Cost Data Collection Runbook - For daily lightweight collection
+resource "azurerm_automation_runbook" "cost_collection_express" {
+  name                    = "rb-cost-collection-express"
+  location                = azurerm_resource_group.cost_management.location
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  log_verbose             = false
+  log_progress            = false
+  description             = "Express daily cost data collection (yesterday's data only, top subscriptions)"
+  runbook_type            = "PowerShell72"
+
+  content = file("${path.module}/scripts/CostDataCollection-Daily.ps1")
 
   tags = local.common_tags
 }
@@ -28,7 +44,7 @@ resource "azurerm_automation_runbook" "weekly_analysis" {
   description             = "Weekly cost analysis and reporting"
   runbook_type            = "PowerShell72"
 
-  content = file("${path.module}/scripts/WeeklyAnalysisEngine-Automation.ps1")
+  content = file("${path.module}/scripts/WeeklyAnalysisEngine.ps1")
 
   tags = local.common_tags
 }
@@ -44,7 +60,7 @@ resource "azurerm_automation_runbook" "baseline_calculation" {
   description             = "Cost baseline calculation for trend analysis and anomaly detection"
   runbook_type            = "PowerShell72"
 
-  content = file("${path.module}/scripts/BaselineCalculation-Automation.ps1")
+  content = file("${path.module}/scripts/BaselineCalculation-Daily.ps1")
 
   tags = local.common_tags
 }
@@ -53,17 +69,31 @@ resource "azurerm_automation_runbook" "baseline_calculation" {
 # Invoice data collection was removed due to API rate limiting issues
 # and lack of useful data for pay-as-you-go subscriptions
 
-# Daily Cost Collection Schedule
-resource "azurerm_automation_schedule" "daily_collection" {
-  name                    = "sch-daily-cost-collection"
+# Daily Express Cost Collection Schedule
+resource "azurerm_automation_schedule" "daily_collection_express" {
+  name                    = "sch-daily-cost-collection-express"
   resource_group_name     = azurerm_resource_group.cost_management.name
   automation_account_name = azurerm_automation_account.cost_management.name
   frequency               = "Day"
   interval                = 1
   timezone                = "America/New_York"
-  start_time              = "2025-07-23T03:00:00-04:00"
-  description             = "Daily cost data collection"
+  start_time              = "2025-07-26T03:00:00-04:00"
+  description             = "Daily express cost data collection (lightweight)"
   expiry_time             = "9999-12-31T18:59:00-05:00"
+}
+
+# Weekly Full Cost Collection Schedule
+resource "azurerm_automation_schedule" "weekly_collection_full" {
+  name                    = "sch-weekly-cost-collection-full"
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  frequency               = "Week"
+  interval                = 1
+  timezone                = "America/New_York"
+  start_time              = "2025-07-27T02:00:00-04:00"
+  description             = "Weekly comprehensive cost data collection (all subscriptions, full data)"
+  expiry_time             = "9999-12-31T18:59:00-05:00"
+  week_days               = ["Saturday"]
 }
 
 # Weekly Analysis Schedule
@@ -97,10 +127,17 @@ resource "azurerm_automation_schedule" "baseline_calculation" {
 # Invoice collection schedule was removed along with the runbook
 
 # Schedule Job Associations
-resource "azurerm_automation_job_schedule" "daily_collection" {
+resource "azurerm_automation_job_schedule" "daily_collection_express" {
   resource_group_name     = azurerm_resource_group.cost_management.name
   automation_account_name = azurerm_automation_account.cost_management.name
-  schedule_name           = azurerm_automation_schedule.daily_collection.name
+  schedule_name           = azurerm_automation_schedule.daily_collection_express.name
+  runbook_name            = azurerm_automation_runbook.cost_collection_express.name
+}
+
+resource "azurerm_automation_job_schedule" "weekly_collection_full" {
+  resource_group_name     = azurerm_resource_group.cost_management.name
+  automation_account_name = azurerm_automation_account.cost_management.name
+  schedule_name           = azurerm_automation_schedule.weekly_collection_full.name
   runbook_name            = azurerm_automation_runbook.cost_collection.name
 }
 

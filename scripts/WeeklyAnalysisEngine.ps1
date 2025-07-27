@@ -516,6 +516,7 @@ function Invoke-ClaudeAnalysis {
         [array]$CostAnomalies = @(),
         [array]$PerformanceData = @(),
         [hashtable]$RightsizingData = @{},
+        [array]$AvdServiceBreakdown = @(),  # New: AVD service category analysis
         [hashtable]$ContextEnrichment = @{}
     )
 
@@ -565,11 +566,12 @@ COMPREHENSIVE DATA ANALYSIS:
 7. COST ANOMALIES DETECTED: {6}
 8. PERFORMANCE METRICS (CPU, Memory, Disk, Network): {7}
 9. VM RIGHTSIZING ANALYSIS: {8}
+10. AVD SERVICE BREAKDOWN by Category: {9}
 
 Focus on:
 1. Cost Trends: Weekly spending patterns, anomalies, and growth analysis
 2. Top Cost Drivers: Services/resources consuming the most budget with growth trends
-3. AVD Analysis: Specific insights on Azure Virtual Desktop costs vs non-AVD
+3. AVD Analysis: Detailed breakdown by service categories (Compute, Network, Storage, Core, etc.) - Note: AVD resources are primarily located in NIPAzure subscription (77bc541c-d229-4ff3-81c1-928accbff379)
 4. VM Rightsizing: Detailed analysis with estimated savings from performance data
 5. Resource Efficiency: Correlation between cost and utilization
 6. Historical Context: Compare current trends with baseline and historical data
@@ -641,7 +643,19 @@ CRITICAL: Return ONLY valid JSON with this exact structure (no additional text):
 }}
 '@
 
-            $prompt = $prompt -f $CostDataJson, $DailyCostTrendsJson, $ServiceCostAnalysisJson, $BaselineDataJson, $HistoricalDataJson, $ResourceInventoryJson, $CostAnomaliesJson, $PerformanceDataJson, $RightsizingDataJson
+            # Convert parameters to JSON for prompt formatting
+            $CostDataJson = $CostData | ConvertTo-Json -Depth 3 -Compress
+            $DailyCostTrendsJson = $DailyCostTrends | ConvertTo-Json -Depth 2 -Compress
+            $ServiceCostAnalysisJson = $ServiceCostAnalysis | ConvertTo-Json -Depth 2 -Compress
+            $BaselineDataJson = $BaselineData | ConvertTo-Json -Depth 2 -Compress
+            $HistoricalDataJson = $HistoricalData | ConvertTo-Json -Depth 2 -Compress
+            $ResourceInventoryJson = $ResourceInventory | ConvertTo-Json -Depth 2 -Compress
+            $CostAnomaliesJson = $CostAnomalies | ConvertTo-Json -Depth 2 -Compress
+            $PerformanceDataJson = $PerformanceData | ConvertTo-Json -Depth 2 -Compress
+            $RightsizingDataJson = $RightsizingData | ConvertTo-Json -Depth 3 -Compress
+            $AvdServiceBreakdownJson = $AvdServiceBreakdown | ConvertTo-Json -Depth 2 -Compress
+
+            $prompt = $prompt -f $CostDataJson, $DailyCostTrendsJson, $ServiceCostAnalysisJson, $BaselineDataJson, $HistoricalDataJson, $ResourceInventoryJson, $CostAnomaliesJson, $PerformanceDataJson, $RightsizingDataJson, $AvdServiceBreakdownJson
 
             # ====== TEMPORARY DEBUG LOGGING ======
             Write-Output "=== CLAUDE REQUEST DEBUG INFO ==="
@@ -1528,8 +1542,8 @@ function Invoke-CostAnalysisWithClaude {
             RightsizingOpportunities = if ($RightsizingData.UnderutilizedVMs) { $RightsizingData.UnderutilizedVMs.Count } else { 0 }
         }
         
-        # Call Claude analysis
-        $analysisText = Invoke-ClaudeAnalysis -CostDataJson ($costSummary | ConvertTo-Json -Depth 3) -PerformanceDataJson ($PerformanceData | ConvertTo-Json -Depth 2) -RightsizingDataJson ($RightsizingData | ConvertTo-Json -Depth 3)
+        # Call Claude analysis with enhanced AVD service breakdown
+        $analysisText = Invoke-ClaudeAnalysis -CostData $costSummary -PerformanceData $PerformanceData -RightsizingData $RightsizingData -AvdServiceBreakdown $avdServiceBreakdown
         
         if ($analysisText) {
             Write-Output "AI analysis completed successfully"
@@ -2024,7 +2038,7 @@ try {
     # Perform enhanced AI analysis if enabled
     $analysisResults = $null
     if ($EnableAdvancedPrompting) {
-        $analysisResults = Invoke-ClaudeAnalysis -CostData $costData -DailyCostTrends $dailyCostTrends -ServiceCostAnalysis $serviceCostAnalysis -BaselineData $baselineData -HistoricalData $historicalData -ResourceInventory $resourceInventory -CostAnomalies $costAnomalies -PerformanceData $performanceData -RightsizingData $rightsizingData -ContextEnrichment $contextEnrichment
+        $analysisResults = Invoke-ClaudeAnalysis -CostData $costData -DailyCostTrends $dailyCostTrends -ServiceCostAnalysis $serviceCostAnalysis -BaselineData $baselineData -HistoricalData $historicalData -ResourceInventory $resourceInventory -CostAnomalies $costAnomalies -PerformanceData $performanceData -RightsizingData $rightsizingData -AvdServiceBreakdown $avdServiceBreakdown -ContextEnrichment $contextEnrichment
     }
     
     if (-not $analysisResults) {
@@ -2070,6 +2084,94 @@ try {
         }
     }
     
+    # Enhanced AVD Service Category Analysis for detailed AVD reporting
+    # Note: All AVD resources are located in NIPAzure subscription (77bc541c-d229-4ff3-81c1-928accbff379)
+    $avdServiceBreakdown = @{}
+    $avdTotalCost = 0
+    $nipAzureSubscriptionId = "77bc541c-d229-4ff3-81c1-928accbff379"
+    
+    if ($costData) {
+        # Check if we have the new AVDServiceCategory field
+        $hasAvdCategoryField = $costData | Get-Member -Name "AVDServiceCategory*" -MemberType NoteProperty | Select-Object -First 1
+        
+        if ($hasAvdCategoryField) {
+            Write-Output "🖥️  Analyzing AVD service categories using new AVDServiceCategory field..."
+            Write-Output "   📍 AVD resources are primarily located in NIPAzure subscription ($nipAzureSubscriptionId)"
+            $avdCategoryProperty = $hasAvdCategoryField.Name
+            
+            # Analyze AVD resources by service category
+            $avdRecordsWithCategory = $costData | Where-Object { 
+                $_.$avdCategoryProperty -and $_.$avdCategoryProperty -ne "Non-AVD" -and $_.$costProperty -ne $null 
+            }
+            
+            if ($avdRecordsWithCategory) {
+                $avdServiceBreakdown = $avdRecordsWithCategory | Group-Object -Property $avdCategoryProperty | ForEach-Object {
+                    $categoryName = $_.Name
+                    $categoryCost = ($_.Group | ForEach-Object { 
+                        try { [double]$_.$costProperty } catch { 0 }
+                    } | Measure-Object -Sum).Sum
+                    
+                    $resourceCount = $_.Group.Count
+                    $avgCostPerResource = if ($resourceCount -gt 0) { $categoryCost / $resourceCount } else { 0 }
+                    
+                    Write-Output "   🔹 $categoryName`: $($categoryCost.ToString('C2')) ($resourceCount resources, avg: $($avgCostPerResource.ToString('C2')))"
+                    
+                    @{
+                        Category = $categoryName
+                        Cost = $categoryCost
+                        ResourceCount = $resourceCount
+                        AverageCostPerResource = $avgCostPerResource
+                        Percentage = 0  # Will be calculated after total
+                    }
+                }
+                
+                # Calculate percentages
+                $avdTotalFromCategories = ($avdServiceBreakdown | ForEach-Object { $_.Cost } | Measure-Object -Sum).Sum
+                if ($avdTotalFromCategories -gt 0) {
+                    $avdServiceBreakdown | ForEach-Object {
+                        $_.Percentage = ($_.Cost / $avdTotalFromCategories) * 100
+                    }
+                }
+                
+                # Analyze AVD costs by subscription to validate NIPAzure location assumption
+                $avdBySubscription = $avdRecordsWithCategory | Group-Object SubscriptionId | ForEach-Object {
+                    $subId = $_.Name
+                    $subCost = ($_.Group | ForEach-Object { 
+                        try { [double]$_.$costProperty } catch { 0 }
+                    } | Measure-Object -Sum).Sum
+                    $subName = if ($subId -eq $nipAzureSubscriptionId) { "NIPAzure" } else { "Other" }
+                    
+                    Write-Output "   � $subName ($subId): $($subCost.ToString('C2')) AVD costs"
+                    @{
+                        SubscriptionId = $subId
+                        SubscriptionName = $subName
+                        Cost = $subCost
+                        Percentage = if ($avdTotalFromCategories -gt 0) { ($subCost / $avdTotalFromCategories) * 100 } else { 0 }
+                    }
+                }
+                
+                Write-Output "   �💡 AVD Service Analysis: $($avdServiceBreakdown.Count) categories totaling $($avdTotalFromCategories.ToString('C2'))"
+                
+                # Validate assumption that AVD resources are primarily in NIPAzure
+                $nipAzureAvdCost = ($avdBySubscription | Where-Object { $_.SubscriptionId -eq $nipAzureSubscriptionId } | ForEach-Object { $_.Cost } | Measure-Object -Sum).Sum
+                $nipAzurePercentage = if ($avdTotalFromCategories -gt 0) { ($nipAzureAvdCost / $avdTotalFromCategories) * 100 } else { 0 }
+                Write-Output "   🎯 NIPAzure contains $($nipAzurePercentage.ToString('F1'))% of total AVD costs (validation of subscription-specific optimization)"
+            } else {
+                Write-Output "   ℹ️  No AVD resources found with service categories"
+            }
+        } else {
+            Write-Output "   ⚠️  AVDServiceCategory field not found - using legacy AVD detection"
+            # Fallback to legacy AVD analysis
+            $legacyAvdRecords = $costData | Where-Object { $_.$avdProperty -eq $true -and $_.$costProperty -ne $null }
+            if ($legacyAvdRecords) {
+                $avdTotalCost = ($legacyAvdRecords | ForEach-Object { 
+                    try { [double]$_.$costProperty } catch { 0 }
+                } | Measure-Object -Sum).Sum
+                Write-Output "   🖥️  Legacy AVD detection: $($avdTotalCost.ToString('C2')) from $($legacyAvdRecords.Count) resources"
+            }
+        }
+    }
+    
     Write-Output "💰 Enhanced cost calculation results:"
     Write-Output "   Total Cost: $($totalCost.ToString('C2'))"
     Write-Output "   AVD Cost: $(if($avdCost -gt 0){$avdCost.ToString('C2')}else{'$0.00'})"
@@ -2085,6 +2187,7 @@ try {
         TotalCost = $totalCost
         AvdCost = $avdCost
         NonAvdCost = $nonAvdCost
+        AvdServiceBreakdown = $avdServiceBreakdown  # New: AVD service category analysis
         CostVariance = 0  # Calculate from baseline if available
         CostAnomalies = $costAnomalies
         UnderutilizedVMs = $rightsizingData.UnderutilizedVMs

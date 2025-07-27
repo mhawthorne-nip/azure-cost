@@ -30,6 +30,7 @@ Import-Module Az.Accounts -Force
 # Custom tables specific to the cost management project
 $CustomTables = @(
     "AzureAdvisorRecommendations_CL",
+    "AzureBudgetTracking_CL",
     "AzureCostBaseline_CL",
     "AzureCostData_CL",
     "AzureCostForecast_CL",

@@ -1,6 +1,6 @@
 # Azure Cost Management Automation Solution
 
-This comprehensive solution provides automated cost analysis across Azure subscriptions with AI-powered insights, weekly reporting, and AVD resource exclusions. Designed for MVP deployment in East US with the naming convention: `<azure-resource-abbreviation>-nip-costing-dev-eus`.
+This comprehensive solution provides automated cost analysis across Azure subscriptions with AI-powered insights, weekly reporting, and AVD service-level reporting. Designed for MVP deployment in East US with the naming convention: `<azure-resource-abbreviation>-nip-costing-dev-eus`.
 
 ## 📚 Complete Documentation
 
@@ -11,7 +11,7 @@ This comprehensive solution provides automated cost analysis across Azure subscr
 ## Key Features
 
 - Single subscription MVP with multi-subscription scalability
-- AVD resource exclusion (resources with **VD** in name)
+- AVD service categorization (Compute, Network, Storage, Core components)
 - Azure CLI authentication for testing (no service principal required)
 - Low-cost MVP configuration (~$3.53/month)
 - Email reporting via Microsoft Graph REST API
